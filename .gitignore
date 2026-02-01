@@ -1,0 +1,14 @@
+# Hassas bilgiler - asla GitHub'a yüklenmemeli!
+.env
+
+# Node.js
+node_modules/
+
+# Test ve debug dosyaları
+test-*.js
+debug-*.js
+temp_*.txt
+
+# OS dosyaları
+.DS_Store
+Thumbs.db
