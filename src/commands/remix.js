@@ -5,9 +5,14 @@
 
 const state = require('../state');
 const { sendSafeMessage } = require('../utils/helpers');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
 
 function register(bot) {
     bot.onText(/\/remix/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         if (!msg.reply_to_message || !msg.reply_to_message.text) {
             return sendSafeMessage(bot, msg.chat.id, '\u{26A0}\u{FE0F} Bir tweete yanitlayarak (Reply) `/remix` yazmalisin.', true);
         }

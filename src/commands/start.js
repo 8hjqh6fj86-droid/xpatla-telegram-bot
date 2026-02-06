@@ -5,13 +5,30 @@
 
 const state = require('../state');
 const { sendSafeMessage } = require('../utils/helpers');
+const userDao = require('../db/dao/userDao');
+const inviteDao = require('../db/dao/inviteDao');
+const { ADMIN_USER_ID } = require('../config');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
 
 function register(bot) {
-    // /start, /help, /yardim
-    bot.onText(/\/(start|help|yardim)/i, (msg) => {
-        const { targetTwitterUsername, currentFormat, currentPersona } = state.getState();
+    // /start, /help, /yardim - with optional invite code
+    bot.onText(/\/(start|help|yardim)(?: (.+))?/i, async (msg, match) => {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const inviteCode = match[2] ? match[2].trim() : null;
 
-        const help = `
+        // Already registered?
+        const existingUser = userDao.findByTelegramId(userId);
+
+        if (existingUser) {
+            if (existingUser.is_banned) {
+                return sendSafeMessage(bot, chatId, 'Hesabiniz engellenmis.');
+            }
+
+            // Show help menu for registered users
+            const { targetTwitterUsername, currentFormat, currentPersona } = state.getUserSettings(userId);
+
+            const help = `
 \u{1F916} *VibeEval Bot v1.9 - Viral Alpha*
 
 \u{2728} *API KULLANAN KOMUTLAR (Kredi Harcar):*
@@ -57,6 +74,7 @@ function register(bot) {
 \u{1F464} Profil: @${targetTwitterUsername} (\`/setuser\`)
 \u{1F3A8} Format: \`${currentFormat}\` (\`/setformat\`)
 \u{1F3AD} Persona: \`${currentPersona}\` (\`/setpersona\`)
+\u{1F511} API Key: \`/setkey\`
 \u{1F4B3} Bakiye: \`/kredi\`
 
 \u{1F4CB} *TUM FORMATLAR:*
@@ -65,11 +83,40 @@ micro, punch, classic, spark, storm, longform, thunder, mega
 \u{1F3AD} *TUM PERSONALAR:*
 authority, news, shitpost, mentalist, bilgi, sigma, doomer, hustler
 `;
-        sendSafeMessage(bot, msg.chat.id, help, true);
+            return sendSafeMessage(bot, chatId, help, true);
+        }
+
+        // Not registered - check if admin
+        if (ADMIN_USER_ID && userId === ADMIN_USER_ID) {
+            userDao.createUser({ telegramId: userId, username: msg.from.username, firstName: msg.from.first_name });
+            userDao.setAdmin(userId);
+            return sendSafeMessage(bot, chatId,
+                'Admin olarak kayit oldunuz!\n\n/setkey ile XPatla API anahtarinizi girin.', true);
+        }
+
+        // Not registered - need invite code
+        if (!inviteCode) {
+            return sendSafeMessage(bot, chatId,
+                'Bu bot davet koduyla calisir.\n\nKayit: `/start DAVET_KODU`\n\nDavet kodu icin admin ile iletisime gecin.', true);
+        }
+
+        // Validate invite code
+        const result = inviteDao.useInviteCode(inviteCode, userId);
+        if (!result.valid) {
+            return sendSafeMessage(bot, chatId, `Gecersiz davet kodu: ${result.reason}`, true);
+        }
+
+        userDao.createUser({ telegramId: userId, username: msg.from.username, firstName: msg.from.first_name, invitedBy: result.invitedBy });
+        sendSafeMessage(bot, chatId,
+            'Hosgeldin! Kayit tamamlandi.\n\n/setkey ile XPatla API anahtarini gir.\nArdindan /help ile tum komutlari gor.', true);
     });
 
     // /nasil
     bot.onText(/\/nasil/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const guide = `
 \u{1F4DA} *VibeEval Bot v1.9 Tam Kilavuz*
 
@@ -121,6 +168,7 @@ authority, news, shitpost, mentalist, bilgi, sigma, doomer, hustler
 \u{2022} \`/setuser <kadi>\` - Hesap degistir
 \u{2022} \`/setformat <tip>\` - Format ayarla
 \u{2022} \`/setpersona <tip>\` - Persona ayarla
+\u{2022} \`/setkey <api_key>\` - XPatla API anahtari
 \u{2022} \`/ornekler\` - Komut kullanim ornekleri
 \u{2022} \`/clean\` - Ekrani temizle
 `;
@@ -130,7 +178,11 @@ authority, news, shitpost, mentalist, bilgi, sigma, doomer, hustler
     // /menu
     bot.onText(/\/menu/, (msg) => {
         const chatId = msg.chat.id;
-        const { targetTwitterUsername, currentFormat, currentPersona } = state.getState();
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
+        const { targetTwitterUsername, currentFormat, currentPersona } = state.getUserSettings(userId);
 
         const menuText = `
 \u{1F680} *XPatla Bot - Gelismis Kontrol Paneli*
@@ -180,8 +232,12 @@ Hos geldin! Tam donanimli viral icerik asistanin hazir.
         sendSafeMessage(bot, msg.chat.id, '\u{1F3D3} *Pong!* Baglanti aktif. \u{2705}', true);
     });
 
-    // /ornekler
+    // /ornekler (FREE - auth only)
     bot.onText(/\/ornekler/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const examples = `
 \u{1F680} *VibeEval Tam Kullanim Kilavuzu*
 
@@ -222,6 +278,7 @@ Hos geldin! Tam donanimli viral icerik asistanin hazir.
 \u{2022} \`/setuser hrrcnes\` -> X profilini degistirir
 \u{2022} \`/setformat punch\` -> Varsayilan yazim formatini ayarlar
 \u{2022} \`/setpersona sigma\` -> Varsayilan kisiligi ayarlar
+\u{2022} \`/setkey <api_key>\` -> XPatla API anahtarini ayarlar
 
 \u{2728} *5. DIGER*
 \u{2022} \`/voice\` (Ses kaydi at) -> Sesi tweet'e cevirir

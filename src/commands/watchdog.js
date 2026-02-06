@@ -4,15 +4,20 @@
  */
 
 const state = require('../state');
-const xpatlaApi = require('../services/xpatlaApi');
 const { sendSafeMessage } = require('../utils/helpers');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
+const { getApiClient } = require('../services/apiClientFactory');
 
 function register(bot) {
     // /izle <user>
     bot.onText(/\/izle (.+)/, (msg, match) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const username = match[1].replace('@', '').trim();
 
-        state.addWatchdog(username);
+        state.addWatchdog(userId, username);
         state.saveWatchdog();
 
         sendSafeMessage(bot, msg.chat.id, `\u{1F50D} *@${username}* radara eklendi. Artik ondan ilham alabilirsin.`, true);
@@ -21,20 +26,28 @@ function register(bot) {
     // /radar
     bot.onText(/\/radar/, async (msg) => {
         const chatId = msg.chat.id;
-        const watchdogData = state.getWatchdog();
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+        const user = auth.user;
+
+        const api = getApiClient(user.xpatla_api_key);
+        if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile XPatla API anahtarinizi girin.');
+
+        const watchdogData = state.getWatchdog(userId);
         const keys = Object.keys(watchdogData);
 
         if (keys.length === 0) {
             return sendSafeMessage(bot, chatId, '\u{1F4E1} *Radar Bos!* Once `/izle <username>` ile birini takip et.');
         }
 
-        const { targetTwitterUsername, currentFormat, currentPersona } = state.getState();
+        const { targetTwitterUsername, currentFormat, currentPersona } = state.getUserSettings(userId);
         const target = keys[Math.floor(Math.random() * keys.length)];
 
         sendSafeMessage(bot, chatId, `\u{1F4E1} *Radar:* *@${target}* stili analiz ediliyor...`, true);
 
         try {
-            const response = await xpatlaApi.post('/tweets/generate', {
+            const response = await api.post('/tweets/generate', {
                 twitter_username: targetTwitterUsername,
                 topic: `@${target} kullanicisinin uslubunu ve tarzini analiz et. Tamamen onun gibi davranarak "guncel trendler" hakkinda viral bir tweet yaz.`,
                 format: currentFormat,
@@ -54,13 +67,20 @@ function register(bot) {
     // /rekabet <user> (with argument - generates analysis)
     bot.onText(/\/rekabet (.+)/, async (msg, match) => {
         const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+        const user = auth.user;
+
+        const api = getApiClient(user.xpatla_api_key);
+        if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile XPatla API anahtarinizi girin.');
+
         const targetUser = match[1].replace('@', '').trim();
-        const { currentFormat, currentPersona } = state.getState();
 
         sendSafeMessage(bot, chatId, `\u{1F3AF} *@${targetUser}* icin rekabet stratejisi hazirlaniyor...`, true);
 
         try {
-            const response = await xpatlaApi.post('/tweets/generate', {
+            const response = await api.post('/tweets/generate', {
                 twitter_username: targetUser,
                 topic: `Bu kullanicinin en guclu yanlarini analiz et ve ona rakip olabilmem icin 3 maddelik strateji uret.`,
                 format: 'punch',
@@ -70,7 +90,7 @@ function register(bot) {
 
             if (response.data.success && response.data.data.tweets) {
                 const analysis = response.data.data.tweets[0].text;
-                state.updateStats('session_replies');
+                state.updateStats(userId, 'session_replies');
 
                 const report = `
 \u{1F3AF} *REKABET STRATEJI RAPORU: @${targetUser}*

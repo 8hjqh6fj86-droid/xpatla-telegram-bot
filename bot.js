@@ -1,61 +1,67 @@
 /**
- * XPatla Bot - Giriş Noktası
- * Modüler yapı: config → bot → commands → callbacks → başlat
+ * XPatla Bot v3.0.0 - Multi-User SQLite
+ * Giris Noktasi: config → db → bot → commands → callbacks → baslat
  */
 
 const TelegramBot = require('node-telegram-bot-api');
-const { token } = require('./src/config');
+const { token, ADMIN_USER_ID } = require('./src/config');
 const { BOT_COMMANDS } = require('./src/utils/constants');
+const { getDb, closeDb } = require('./src/db');
 const { registerAll } = require('./src/commands');
 const callbacks = require('./src/callbacks');
-const xpatlaApi = require('./src/services/xpatlaApi');
-const state = require('./src/state');
-const { sendSafeMessage } = require('./src/utils/helpers');
+const userDao = require('./src/db/dao/userDao');
+const { getApiClient } = require('./src/services/apiClientFactory');
 
-// Bot instance oluştur
+// Database baslat (tablolari olusturur)
+getDb();
+
+// Bot instance
 const bot = new TelegramBot(token, { polling: true });
 
-// Gelen mesajları logla
+// Gelen mesajlari logla
 bot.on('message', (msg) => {
-    console.log(`>>> [GELEN] ${msg.from.username || msg.from.first_name}: ${msg.text}`);
+    console.log(`>>> [GELEN] ${msg.from.username || msg.from.first_name} (${msg.from.id}): ${msg.text || '[media]'}`);
 });
 
-// Tüm komutları kaydet
+// Tum komutlari ve callback'leri kaydet
 registerAll(bot);
-
-// Callback handler'ları kaydet
 callbacks.register(bot);
 
-// Bot başlatma ve hesap kontrolü
+// Bot baslatma
 async function initializeBot() {
     try {
-        console.log('XPatla hesapları kontrol ediliyor...');
-        const response = await xpatlaApi.get('/credits/balance');
-        const data = response.data.data;
-        const accounts = data.accounts || [];
-
-        if (accounts.length > 0) {
-            const hasHrrcnes = accounts.find(a => a.twitter_username === 'hrrcnes');
-            const username = hasHrrcnes ? 'hrrcnes' : accounts[0].twitter_username;
-            state.setTwitterUsername(username);
-            console.log(`Bot hazir. Aktif profil: @${username} | Kredi: ${data.credits_balance}`);
+        // Admin varsa kredi bakiyesini kontrol et
+        if (ADMIN_USER_ID) {
+            const admin = userDao.findByTelegramId(ADMIN_USER_ID);
+            if (admin && admin.xpatla_api_key) {
+                const api = getApiClient(admin.xpatla_api_key);
+                const response = await api.get('/credits/balance');
+                const data = response.data.data;
+                console.log(`Admin kredi: ${data.credits_balance}`);
+            }
         }
 
-        // Telegram komut menüsünü ayarla
         await bot.setMyCommands(BOT_COMMANDS);
-        console.log('Telegram komut menüsü güncellendi.');
+        console.log('Telegram komut menusu guncellendi.');
     } catch (e) {
-        console.error('Başlatma API Hatası:', e.message);
+        console.error('Baslatma Hatasi:', e.message);
     }
 }
 
 initializeBot();
 
-// Polling hataları
+// Polling hatalari
 bot.on('polling_error', (error) => {
     console.error('[POLLING HATASI]', error.code, error.message);
 });
 
-process.on('uncaughtException', (err) => console.error('KRİTİK HATA:', err));
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('Bot kapatiliyor...');
+    closeDb();
+    process.exit(0);
+});
 
-console.log('Bot v2.0.0 Aktif - Modüler Yapı.');
+process.on('uncaughtException', (err) => console.error('KRITIK HATA:', err));
+
+console.log('Bot v3.0.0 Aktif - Multi-User SQLite.');

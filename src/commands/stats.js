@@ -4,22 +4,36 @@
  */
 
 const state = require('../state');
-const xpatlaApi = require('../services/xpatlaApi');
 const { sendSafeMessage } = require('../utils/helpers');
 const { TREND_TOPICS } = require('../utils/constants');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
+const { getApiClient } = require('../services/apiClientFactory');
 
 function register(bot) {
     // /stats - full stats panel with API balance check
     bot.onText(/\/stats/, async (msg) => {
         const chatId = msg.chat.id;
-        const { targetTwitterUsername, currentFormat, currentPersona } = state.getState();
-        const statsData = state.getStats();
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+        const user = auth.user;
 
-        try {
-            const response = await xpatlaApi.get('/credits/balance');
-            const balance = response.data.data.credits_balance;
+        const { targetTwitterUsername, currentFormat, currentPersona } = state.getUserSettings(userId);
+        const statsData = state.getStats(userId);
 
-            const statsMsg = `
+        // Try to get balance if user has API key
+        let balanceText = 'Ayarlanmamis (/setkey ile girin)';
+        const api = getApiClient(user.xpatla_api_key);
+        if (api) {
+            try {
+                const response = await api.get('/credits/balance');
+                balanceText = String(response.data.data.credits_balance);
+            } catch (_e) {
+                balanceText = 'Alinamadi';
+            }
+        }
+
+        const statsMsg = `
 \u{1F4CA} *Bot Istatistikleri*
 
 \u{1F426} *Uretim Sayilari (Bu Oturum):*
@@ -28,7 +42,7 @@ function register(bot) {
 \u{2022} Reply: ${statsData.session_replies}
 \u{2022} Remix: ${statsData.session_remixes}
 
-\u{1F4B3} *Kredi Bakiyesi:* ${balance}
+\u{1F4B3} *Kredi Bakiyesi:* ${balanceText}
 \u{1F464} *Aktif Profil:* @${targetTwitterUsername}
 \u{1F3A8} *Format:* ${currentFormat}
 \u{1F3AD} *Persona:* ${currentPersona}
@@ -41,15 +55,16 @@ function register(bot) {
 \u{26A1} *XP:* ${statsData.total_xp || 0}
 \u{1F3AF} *Hedef:* ${statsData.daily_progress}/${statsData.daily_goal || 0}
 `;
-            sendSafeMessage(bot, chatId, statsMsg, true);
-        } catch (e) {
-            sendSafeMessage(bot, chatId, '\u{274C} Istatistikler yuklenemedi.');
-        }
+        sendSafeMessage(bot, chatId, statsMsg, true);
     });
 
     // /rutbe - rank and streak info
     bot.onText(/\/rutbe/, (msg) => {
-        const statsData = state.getStats();
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
+        const statsData = state.getStats(userId);
         const rank = state.getRank(statsData.total_xp || 0);
 
         const msgRank = `
@@ -66,13 +81,17 @@ function register(bot) {
 
     // /hedef <num> - set daily goal
     bot.onText(/\/hedef (\d+)/, (msg, match) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const target = parseInt(match[1], 10);
 
         if (isNaN(target) || target <= 0) {
             return sendSafeMessage(bot, msg.chat.id, '\u{26A0}\u{FE0F} Gecerli bir sayi girin.');
         }
 
-        state.setDailyGoal(target);
+        state.setDailyGoal(userId, target);
         state.saveStats();
 
         sendSafeMessage(bot, msg.chat.id, `\u{1F3AF} *Gunluk Hedef Ayarlandi: ${target} Tweet*\nHadi calismaya baslayalim! \u{1F680}`, true);
@@ -80,6 +99,10 @@ function register(bot) {
 
     // /slot - motivation slot machine
     bot.onText(/\/slot/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const slots = ['\u{1F48E}', '\u{1F680}', '\u{1F525}', '\u{1F4B0}', '\u{1F9E0}', '\u{26A1}'];
         const r1 = slots[Math.floor(Math.random() * slots.length)];
         const r2 = slots[Math.floor(Math.random() * slots.length)];
@@ -119,8 +142,12 @@ function register(bot) {
 
     // /sabah - morning briefing
     bot.onText(/\/sabah/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const today = new Date().toLocaleDateString('tr-TR');
-        const statsData = state.getStats();
+        const statsData = state.getStats(userId);
         const rank = state.getRank(statsData.total_xp || 0);
         const randomTrend = TREND_TOPICS[Math.floor(Math.random() * TREND_TOPICS.length)];
 

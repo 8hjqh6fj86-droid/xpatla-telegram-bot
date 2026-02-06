@@ -1,270 +1,173 @@
-const fs = require('fs');
-const path = require('path');
-const { XP_MAP, RANK_THRESHOLDS } = require('./utils/constants');
+/**
+ * XPatla Bot - State Manager (v2 - SQLite backed)
+ * Tum persistent data artik SQLite'da, in-memory context'ler ayni kaliyor.
+ *
+ * BREAKING CHANGE: Tum data fonksiyonlari artik ilk parametre olarak userId aliyor.
+ * save*() fonksiyonlari no-op (SQLite auto-persist).
+ */
+
+const userDao = require('./db/dao/userDao');
+const draftsDao = require('./db/dao/draftsDao');
+const snippetsDao = require('./db/dao/snippetsDao');
+const watchdogDao = require('./db/dao/watchdogDao');
+const schedulesDao = require('./db/dao/schedulesDao');
+const statsDao = require('./db/dao/statsDao');
+const { RANK_THRESHOLDS } = require('./utils/constants');
 
 // ---------------------------------------------------------------------------
-// File paths
+// In-memory context'ler (per-chat, gecici - restart'ta kaybolur, sorun degil)
 // ---------------------------------------------------------------------------
-const draftsPath = path.join(__dirname, '..', 'data', 'drafts.json');
-const snippetsPath = path.join(__dirname, '..', 'data', 'snippets.json');
-const watchdogPath = path.join(__dirname, '..', 'data', 'watchdog.json');
-const schedulesPath = path.join(__dirname, '..', 'data', 'schedules.json');
-const statsPath = path.join(__dirname, '..', 'data', 'stats.json');
-
-// ---------------------------------------------------------------------------
-// Safe JSON loader
-// ---------------------------------------------------------------------------
-function loadJSON(filePath, fallback) {
-    try {
-        const raw = fs.readFileSync(filePath, 'utf-8');
-        return JSON.parse(raw);
-    } catch (_err) {
-        return fallback;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// In-memory state (lost on restart)
-// ---------------------------------------------------------------------------
-let targetTwitterUsername = 'hrrcnes';
-let currentFormat = 'punch';
-let currentPersona = 'authority';
 let remixContext = {};
 let replyContext = {};
 let abContext = {};
 let frameworkContext = {};
 
-// ---------------------------------------------------------------------------
-// Persistent data (loaded from JSON files)
-// ---------------------------------------------------------------------------
-let draftsData = loadJSON(draftsPath, []);
-let snippetsData = loadJSON(snippetsPath, {});
-let watchdogData = loadJSON(watchdogPath, {});
-let schedulesData = loadJSON(schedulesPath, []);
-
-const defaultStats = {
-    session_tweets: 0,
-    session_threads: 0,
-    session_replies: 0,
-    session_remixes: 0,
-    last_activity: null,
-    total_xp: 0,
-    current_streak: 0,
-    last_streak_date: null,
-    daily_goal: 0,
-    daily_progress: 0,
-    last_goal_date: null
-};
-
-let statsData = loadJSON(statsPath, defaultStats);
-
-// Ensure all default keys are present even if the file was partial
-statsData = { ...defaultStats, ...statsData };
-
 // ===========================================================================
-// State accessors
+// Context Accessors (chatId bazli - DEGISMEDI)
 // ===========================================================================
 
-function getState() {
-    return {
-        targetTwitterUsername,
-        currentFormat,
-        currentPersona,
-        remixContext,
-        replyContext,
-        abContext,
-        frameworkContext,
-        draftsData,
-        snippetsData,
-        watchdogData,
-        schedulesData,
-        statsData
-    };
-}
-
-// ---------------------------------------------------------------------------
-// Simple setters
-// ---------------------------------------------------------------------------
-function setTwitterUsername(username) {
-    targetTwitterUsername = username;
-}
-
-function setFormat(format) {
-    currentFormat = format;
-}
-
-function setPersona(persona) {
-    currentPersona = persona;
-}
-
-// ---------------------------------------------------------------------------
-// Remix context (per-chat)
-// ---------------------------------------------------------------------------
-function getRemixContext(chatId) {
-    return remixContext[chatId];
-}
-
+function getRemixContext(chatId) { return remixContext[chatId]; }
 function setRemixContext(chatId, text) {
     remixContext = { ...remixContext, [chatId]: text };
 }
-
 function deleteRemixContext(chatId) {
     const { [chatId]: _removed, ...rest } = remixContext;
     remixContext = rest;
 }
 
-// ---------------------------------------------------------------------------
-// Reply context (per-chat)
-// ---------------------------------------------------------------------------
-function getReplyContext(chatId) {
-    return replyContext[chatId];
-}
-
+function getReplyContext(chatId) { return replyContext[chatId]; }
 function setReplyContext(chatId, text) {
     replyContext = { ...replyContext, [chatId]: text };
 }
-
 function deleteReplyContext(chatId) {
     const { [chatId]: _removed, ...rest } = replyContext;
     replyContext = rest;
 }
 
-// ---------------------------------------------------------------------------
-// A/B context (per-chat)
-// ---------------------------------------------------------------------------
-function getAbContext(chatId) {
-    return abContext[chatId];
-}
-
+function getAbContext(chatId) { return abContext[chatId]; }
 function setAbContext(chatId, data) {
     abContext = { ...abContext, [chatId]: data };
 }
-
 function deleteAbContext(chatId) {
     const { [chatId]: _removed, ...rest } = abContext;
     abContext = rest;
 }
 
-// ---------------------------------------------------------------------------
-// Framework context (per-chat)
-// ---------------------------------------------------------------------------
-function getFrameworkContext(chatId) {
-    return frameworkContext[chatId];
-}
-
+function getFrameworkContext(chatId) { return frameworkContext[chatId]; }
 function setFrameworkContext(chatId, data) {
     frameworkContext = { ...frameworkContext, [chatId]: data };
 }
-
 function deleteFrameworkContext(chatId) {
     const { [chatId]: _removed, ...rest } = frameworkContext;
     frameworkContext = rest;
 }
 
 // ===========================================================================
-// Drafts
+// User Settings (DB'den)
 // ===========================================================================
 
-function getDrafts() {
-    return draftsData;
-}
-
-function addDraft(content) {
-    const draft = {
-        id: Date.now(),
-        content,
-        created_at: new Date().toISOString()
-    };
-    draftsData = [...draftsData, draft];
-    return draft;
-}
-
-function deleteDraft(id) {
-    draftsData = draftsData.filter((d) => d.id !== id);
-}
-
-function saveDrafts() {
-    fs.writeFileSync(draftsPath, JSON.stringify(draftsData, null, 2));
-}
-
-// ===========================================================================
-// Snippets
-// ===========================================================================
-
-function getSnippets() {
-    return snippetsData;
-}
-
-function setSnippet(key, value) {
-    snippetsData = { ...snippetsData, [key]: value };
-}
-
-function deleteSnippet(key) {
-    const { [key]: _removed, ...rest } = snippetsData;
-    snippetsData = rest;
-}
-
-function saveSnippets() {
-    fs.writeFileSync(snippetsPath, JSON.stringify(snippetsData, null, 2));
-}
-
-// ===========================================================================
-// Watchdog
-// ===========================================================================
-
-function getWatchdog() {
-    return watchdogData;
-}
-
-function addWatchdog(username) {
-    watchdogData = {
-        ...watchdogData,
-        [username]: { added_at: new Date().toISOString() }
+function getUserSettings(userId) {
+    const user = userDao.findByTelegramId(userId);
+    return {
+        targetTwitterUsername: user?.twitter_username || '',
+        currentFormat: user?.current_format || 'punch',
+        currentPersona: user?.current_persona || 'authority'
     };
 }
 
-function saveWatchdog() {
-    fs.writeFileSync(watchdogPath, JSON.stringify(watchdogData, null, 2));
+function setTwitterUsername(userId, username) {
+    userDao.updateUser(userId, { twitter_username: username });
+}
+
+function setFormat(userId, format) {
+    userDao.updateUser(userId, { current_format: format });
+}
+
+function setPersona(userId, persona) {
+    userDao.updateUser(userId, { current_persona: persona });
 }
 
 // ===========================================================================
-// Schedules
+// Drafts (userId bazli)
 // ===========================================================================
 
-function getSchedules() {
-    return schedulesData;
+function getDrafts(userId) {
+    return draftsDao.getDrafts(userId);
 }
 
-function addSchedule(schedule) {
-    const entry = {
-        id: Date.now(),
-        ...schedule,
-        notified: false
-    };
-    schedulesData = [...schedulesData, entry];
-    return entry;
+function addDraft(userId, content) {
+    return draftsDao.addDraft(userId, content);
 }
 
-function markNotified(id) {
-    schedulesData = schedulesData.map((s) =>
-        s.id === id ? { ...s, notified: true } : s
-    );
+function deleteDraft(userId, draftId) {
+    return draftsDao.deleteDraft(userId, draftId);
 }
 
-function saveSchedules() {
-    fs.writeFileSync(schedulesPath, JSON.stringify(schedulesData, null, 2));
-}
+function saveDrafts() { /* no-op: SQLite auto-persist */ }
 
 // ===========================================================================
-// Stats & Gamification
+// Snippets (userId bazli)
 // ===========================================================================
 
-function getStats() {
-    return statsData;
+function getSnippets(userId) {
+    return snippetsDao.getSnippets(userId);
+}
+
+function setSnippet(userId, key, value) {
+    return snippetsDao.setSnippet(userId, key, value);
+}
+
+function deleteSnippet(userId, key) {
+    return snippetsDao.deleteSnippet(userId, key);
+}
+
+function saveSnippets() { /* no-op: SQLite auto-persist */ }
+
+// ===========================================================================
+// Watchdog (userId bazli)
+// ===========================================================================
+
+function getWatchdog(userId) {
+    return watchdogDao.getWatchdog(userId);
+}
+
+function addWatchdog(userId, username) {
+    return watchdogDao.addWatchdog(userId, username);
+}
+
+function saveWatchdog() { /* no-op: SQLite auto-persist */ }
+
+// ===========================================================================
+// Schedules (userId bazli)
+// ===========================================================================
+
+function getSchedules(userId) {
+    return schedulesDao.getSchedules(userId);
+}
+
+function addSchedule(userId, schedule) {
+    return schedulesDao.addSchedule(userId, schedule.chatId, schedule.content, schedule.time);
+}
+
+function markNotified(scheduleId) {
+    return schedulesDao.markNotified(scheduleId);
+}
+
+function getPendingSchedules() {
+    return schedulesDao.getPendingSchedules();
+}
+
+function saveSchedules() { /* no-op: SQLite auto-persist */ }
+
+// ===========================================================================
+// Stats & Gamification (userId bazli)
+// ===========================================================================
+
+function getStats(userId) {
+    return statsDao.getStats(userId);
 }
 
 function getRank(xp) {
-    // RANK_THRESHOLDS is sorted ascending by min. Walk from highest to lowest.
     for (let i = RANK_THRESHOLDS.length - 1; i >= 0; i--) {
         if (xp >= RANK_THRESHOLDS[i].min) {
             return RANK_THRESHOLDS[i].name;
@@ -273,69 +176,47 @@ function getRank(xp) {
     return RANK_THRESHOLDS[0].name;
 }
 
-function updateStats(type) {
-    const now = new Date();
-    const today = now.toLocaleDateString('tr-TR');
+function updateStats(userId, type) {
+    return statsDao.updateStats(userId, type);
+}
 
-    // XP increase
-    const xpGain = XP_MAP[type] || 5;
-    const newXp = (statsData.total_xp || 0) + xpGain;
+function setDailyGoal(userId, goal) {
+    return statsDao.setDailyGoal(userId, goal);
+}
 
-    // Daily goal progress (only for tweets/threads)
-    let newDailyProgress = statsData.daily_progress;
-    let newLastGoalDate = statsData.last_goal_date;
+function saveStats() { /* no-op: SQLite auto-persist */ }
 
-    if (['session_tweets', 'session_threads'].includes(type)) {
-        if (statsData.last_goal_date !== today) {
-            newDailyProgress = 0;
-            newLastGoalDate = today;
-        }
-        newDailyProgress++;
+// ===========================================================================
+// Backward compat: getState() - artik userId gerektirir
+// ===========================================================================
+
+function getState(userId) {
+    if (!userId) {
+        // Eger userId verilmezse sadece context'leri don (eski uyumluluk)
+        return {
+            targetTwitterUsername: '',
+            currentFormat: 'punch',
+            currentPersona: 'authority',
+            remixContext,
+            replyContext,
+            abContext,
+            frameworkContext
+        };
     }
 
-    // Streak logic
-    let newStreak = statsData.current_streak;
-    let newLastStreakDate = statsData.last_streak_date;
-
-    if (statsData.last_streak_date !== today) {
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toLocaleDateString('tr-TR');
-
-        if (statsData.last_streak_date === yesterdayStr) {
-            newStreak = statsData.current_streak + 1;
-        } else {
-            newStreak = 1;
-        }
-        newLastStreakDate = today;
-    }
-
-    // Build updated stats immutably
-    statsData = {
-        ...statsData,
-        total_xp: newXp,
-        daily_progress: newDailyProgress,
-        last_goal_date: newLastGoalDate,
-        current_streak: newStreak,
-        last_streak_date: newLastStreakDate,
-        [type]: (statsData[type] || 0) + 1,
-        last_activity: now.toLocaleString('tr-TR')
-    };
-
-    fs.writeFileSync(statsPath, JSON.stringify(statsData, null, 2));
-
+    const settings = getUserSettings(userId);
     return {
-        goalCompleted: statsData.daily_goal > 0 && statsData.daily_progress === statsData.daily_goal,
-        newStreak: statsData.current_streak
+        ...settings,
+        remixContext,
+        replyContext,
+        abContext,
+        frameworkContext,
+        draftsData: getDrafts(userId),
+        snippetsData: getSnippets(userId),
+        watchdogData: getWatchdog(userId),
+        schedulesData: getSchedules(userId),
+        statsData: getStats(userId)
     };
-}
-
-function setDailyGoal(goal) {
-    statsData = { ...statsData, daily_goal: goal };
-}
-
-function saveStats() {
-    fs.writeFileSync(statsPath, JSON.stringify(statsData, null, 2));
 }
 
 // ===========================================================================
@@ -343,10 +224,14 @@ function saveStats() {
 // ===========================================================================
 
 module.exports = {
+    // Backward compat
     getState,
+    // User settings
+    getUserSettings,
     setTwitterUsername,
     setFormat,
     setPersona,
+    // Contexts (chatId bazli - degismedi)
     getRemixContext,
     setRemixContext,
     deleteRemixContext,
@@ -359,21 +244,27 @@ module.exports = {
     getFrameworkContext,
     setFrameworkContext,
     deleteFrameworkContext,
+    // Drafts (userId bazli)
     getDrafts,
     addDraft,
     deleteDraft,
     saveDrafts,
+    // Snippets (userId bazli)
     getSnippets,
     setSnippet,
     deleteSnippet,
     saveSnippets,
+    // Watchdog (userId bazli)
     getWatchdog,
     addWatchdog,
     saveWatchdog,
+    // Schedules (userId bazli)
     getSchedules,
     addSchedule,
     markNotified,
+    getPendingSchedules,
     saveSchedules,
+    // Stats (userId bazli)
     getStats,
     updateStats,
     getRank,

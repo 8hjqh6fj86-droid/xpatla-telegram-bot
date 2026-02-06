@@ -9,6 +9,15 @@ test-*.js
 debug-*.js
 temp_*.txt
 
+# SQLite veritabani
+data/xpatla.db
+data/xpatla.db-wal
+data/xpatla.db-shm
+
+# Log dosyalari
+output.log
+*.log
+
 # OS dosyaları
 .DS_Store
 Thumbs.db

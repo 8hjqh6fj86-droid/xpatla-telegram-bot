@@ -5,7 +5,8 @@
 
 const path = require('path');
 const state = require('../state');
-const xpatlaApi = require('../services/xpatlaApi');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
+const { getApiClient } = require('../services/apiClientFactory');
 const { sendSafeMessage, formatAnalysis } = require('../utils/helpers');
 const { VIRAL_FRAMEWORKS } = require('../utils/constants');
 
@@ -36,7 +37,7 @@ function pickRandom(arr) {
 // ---------------------------------------------------------------------------
 // Menu system callback handlers
 // ---------------------------------------------------------------------------
-function handleMenuCallbacks(bot, chatId, action) {
+function handleMenuCallbacks(bot, chatId, userId, action) {
     switch (action) {
         case 'quick_tweet':
             return sendSafeMessage(
@@ -110,7 +111,7 @@ function handleMenuCallbacks(bot, chatId, action) {
             );
 
         case 'show_stats': {
-            const statsData = state.getStats();
+            const statsData = state.getStats(userId);
             const rank = state.getRank(statsData.total_xp || 0);
 
             const statsMsg = `\u{1F4CA} *Hizli Istatistikler*
@@ -147,7 +148,7 @@ function handleMenuCallbacks(bot, chatId, action) {
             });
 
         case 'show_settings': {
-            const { targetTwitterUsername, currentFormat, currentPersona } = state.getState();
+            const { targetTwitterUsername, currentFormat, currentPersona } = state.getUserSettings(userId);
 
             const settingsMsg = `\u{2699}\u{FE0F} *Mevcut Ayarlar*
 
@@ -209,7 +210,7 @@ function handleIdeaCallback(bot, chatId, action) {
 // ---------------------------------------------------------------------------
 // Remix callback handler (remix_*)
 // ---------------------------------------------------------------------------
-async function handleRemixCallback(bot, chatId, action) {
+async function handleRemixCallback(bot, chatId, userId, user, action) {
     const persona = action.replace('remix_', '');
     const originalText = state.getRemixContext(chatId);
 
@@ -217,11 +218,16 @@ async function handleRemixCallback(bot, chatId, action) {
         return sendSafeMessage(bot, chatId, '\u{26A0}\u{FE0F} Remix icin metin bulunamadi. Lutfen `/remix` komutunu tekrar kullanin.', true);
     }
 
-    const { targetTwitterUsername, currentFormat } = state.getState();
+    const api = getApiClient(user.xpatla_api_key);
+    if (!api) {
+        return sendSafeMessage(bot, chatId, '\u{26A0}\u{FE0F} Once /setkey ile API anahtarinizi girin.', true);
+    }
+
+    const { targetTwitterUsername, currentFormat } = state.getUserSettings(userId);
     sendSafeMessage(bot, chatId, `\u{231B} *${persona}* personasi ile yeniden yaziliyor...`, true);
 
     try {
-        const response = await xpatlaApi.post('/tweets/generate', {
+        const response = await api.post('/tweets/generate', {
             twitter_username: targetTwitterUsername,
             topic: `Su tweeti yeniden yaz ve bana sadece tweeti ver: "${originalText}"`,
             format: currentFormat,
@@ -231,7 +237,7 @@ async function handleRemixCallback(bot, chatId, action) {
 
         if (response.data.success && response.data.data.tweets) {
             const tweet = response.data.data.tweets[0].text;
-            const { goalCompleted, newStreak } = state.updateStats('session_remixes');
+            const { goalCompleted, newStreak } = state.updateStats(userId, 'session_remixes');
             const analysis = formatAnalysis(tweet);
 
             let result = `\u{1F504} *Remix Sonucu (${persona}):*\n\n${tweet}\n\n---${analysis}`;
@@ -258,7 +264,7 @@ async function handleRemixCallback(bot, chatId, action) {
 // ---------------------------------------------------------------------------
 // Cevap/Reply callback handler (cevap_*)
 // ---------------------------------------------------------------------------
-async function handleCevapCallback(bot, chatId, action) {
+async function handleCevapCallback(bot, chatId, userId, user, action) {
     const type = action.replace('cevap_', '');
     const originalText = state.getReplyContext(chatId);
 
@@ -271,11 +277,16 @@ async function handleCevapCallback(bot, chatId, action) {
         return sendSafeMessage(bot, chatId, '\u{274C} Gecersiz cevap tipi.');
     }
 
-    const { targetTwitterUsername, currentPersona } = state.getState();
+    const api = getApiClient(user.xpatla_api_key);
+    if (!api) {
+        return sendSafeMessage(bot, chatId, '\u{26A0}\u{FE0F} Once /setkey ile API anahtarinizi girin.', true);
+    }
+
+    const { targetTwitterUsername, currentPersona } = state.getUserSettings(userId);
     sendSafeMessage(bot, chatId, '\u{231B} Cevap uretiliyor...', false);
 
     try {
-        const response = await xpatlaApi.post('/tweets/generate', {
+        const response = await api.post('/tweets/generate', {
             twitter_username: targetTwitterUsername,
             topic: `${promptInstruction}: "${originalText}"`,
             format: 'micro',
@@ -285,7 +296,7 @@ async function handleCevapCallback(bot, chatId, action) {
 
         if (response.data.success && response.data.data.tweets) {
             const tweet = response.data.data.tweets[0].text;
-            const { goalCompleted, newStreak } = state.updateStats('session_replies');
+            const { goalCompleted, newStreak } = state.updateStats(userId, 'session_replies');
             const analysis = formatAnalysis(tweet);
 
             let result = `\u{1F4AC} *Cevap (${type}):*\n\n${tweet}\n\n---${analysis}`;
@@ -351,7 +362,7 @@ function handleSablonCallback(bot, chatId, action) {
 // ---------------------------------------------------------------------------
 // A/B Test callback handler (ab_*)
 // ---------------------------------------------------------------------------
-function handleAbCallback(bot, chatId, action) {
+function handleAbCallback(bot, chatId, userId, action) {
     const selectedIndex = parseInt(action.replace('ab_', ''), 10);
     const versions = state.getAbContext(chatId);
 
@@ -360,7 +371,7 @@ function handleAbCallback(bot, chatId, action) {
     }
 
     const selectedTweet = versions[selectedIndex];
-    const { goalCompleted, newStreak } = state.updateStats('session_tweets');
+    const { goalCompleted, newStreak } = state.updateStats(userId, 'session_tweets');
     const analysis = formatAnalysis(selectedTweet);
 
     let result = `\u{2705} *Secimin: Versiyon ${selectedIndex + 1}*\n\n${selectedTweet}\n\n---${analysis}`;
@@ -388,8 +399,16 @@ function register(bot) {
         try {
             await bot.answerCallbackQuery(callbackQuery.id);
 
+            // ----- Auth check -----
+            const userId = callbackQuery.from.id;
+            const auth = requireAuth(userId);
+            if (!auth.authorized) {
+                return handleUnauthorized(bot, { chat: { id: chatId } }, auth.reason);
+            }
+            const user = auth.user;
+
             // ----- Menu system callbacks -----
-            const menuResult = handleMenuCallbacks(bot, chatId, action);
+            const menuResult = handleMenuCallbacks(bot, chatId, userId, action);
             if (menuResult !== null) return;
 
             // ----- Hook callbacks (hook_*) -----
@@ -404,12 +423,12 @@ function register(bot) {
 
             // ----- Remix callbacks (remix_*) -----
             if (action.startsWith('remix_')) {
-                return handleRemixCallback(bot, chatId, action);
+                return handleRemixCallback(bot, chatId, userId, user, action);
             }
 
             // ----- Cevap/Reply callbacks (cevap_*) -----
             if (action.startsWith('cevap_')) {
-                return handleCevapCallback(bot, chatId, action);
+                return handleCevapCallback(bot, chatId, userId, user, action);
             }
 
             // ----- Framework callbacks (fw_*) -----
@@ -424,7 +443,7 @@ function register(bot) {
 
             // ----- A/B Test callbacks (ab_*) -----
             if (action.startsWith('ab_')) {
-                return handleAbCallback(bot, chatId, action);
+                return handleAbCallback(bot, chatId, userId, action);
             }
 
         } catch (err) {

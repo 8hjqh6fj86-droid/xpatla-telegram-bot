@@ -4,20 +4,29 @@
  */
 
 const state = require('../state');
-const xpatlaApi = require('../services/xpatlaApi');
 const { sendSafeMessage } = require('../utils/helpers');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
+const { getApiClient } = require('../services/apiClientFactory');
 
 function register(bot) {
     // /reply <url>
     bot.onText(/\/reply (.+)/, async (msg, match) => {
         const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+        const user = auth.user;
+
+        const api = getApiClient(user.xpatla_api_key);
+        if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile XPatla API anahtarinizi girin.');
+
         const tweetUrl = match[1];
-        const { targetTwitterUsername, currentPersona } = state.getState();
+        const { targetTwitterUsername, currentPersona } = state.getUserSettings(userId);
 
         sendSafeMessage(bot, chatId, `\u{231B} Tweete uygun cevap uretiliyor...`);
 
         try {
-            const response = await xpatlaApi.post('/tweets/generate-reply', {
+            const response = await api.post('/tweets/generate-reply', {
                 twitter_username: targetTwitterUsername,
                 tweet_url: tweetUrl,
                 persona: currentPersona
@@ -34,6 +43,10 @@ function register(bot) {
 
     // /cevap (reply-based)
     bot.onText(/\/cevap/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         if (!msg.reply_to_message || !msg.reply_to_message.text) {
             return sendSafeMessage(bot, msg.chat.id, '\u{26A0}\u{FE0F} Bir tweete yanitlayarak (Reply) `/cevap` yazmalisin.', true);
         }

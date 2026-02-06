@@ -5,15 +5,20 @@
 
 const state = require('../state');
 const { sendSafeMessage } = require('../utils/helpers');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
 
 function register(bot) {
     bot.onText(/\/snippet(?: (.+))?/, (msg, match) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const arg = match[1] ? match[1].trim() : '';
         const chatId = msg.chat.id;
 
         // /snippet (list all)
         if (!arg) {
-            const snippetsData = state.getSnippets();
+            const snippetsData = state.getSnippets(userId);
             const keys = Object.keys(snippetsData);
 
             if (keys.length === 0) {
@@ -35,7 +40,7 @@ function register(bot) {
             const key = parts[1].toLowerCase();
             const content = parts.slice(2).join(' ');
 
-            state.setSnippet(key, content);
+            state.setSnippet(userId, key, content);
             state.saveSnippets();
 
             return sendSafeMessage(bot, chatId, `\u{2705} *"${key}"* kaydedildi.`, true);
@@ -44,10 +49,10 @@ function register(bot) {
         // /snippet sil <name>
         if (command === 'sil') {
             const key = parts[1] ? parts[1].toLowerCase() : '';
-            const snippetsData = state.getSnippets();
+            const snippetsData = state.getSnippets(userId);
 
             if (snippetsData[key]) {
-                state.deleteSnippet(key);
+                state.deleteSnippet(userId, key);
                 state.saveSnippets();
                 return sendSafeMessage(bot, chatId, `\u{1F5D1}\u{FE0F} *"${key}"* silindi.`, true);
             }
@@ -57,7 +62,7 @@ function register(bot) {
 
         // /snippet <name> (show)
         const key = command;
-        const snippetsData = state.getSnippets();
+        const snippetsData = state.getSnippets(userId);
 
         if (snippetsData[key]) {
             return sendSafeMessage(bot, chatId, snippetsData[key]);

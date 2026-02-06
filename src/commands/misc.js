@@ -6,17 +6,22 @@
 
 const path = require('path');
 const state = require('../state');
-const xpatlaApi = require('../services/xpatlaApi');
 const { sendSafeMessage } = require('../utils/helpers');
 const { TREND_TOPICS } = require('../utils/constants');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
+const { getApiClient } = require('../services/apiClientFactory');
 
 const hooksData = require(path.join(__dirname, '..', '..', 'data', 'hooks.json'));
 const ideasData = require(path.join(__dirname, '..', '..', 'data', 'ideas.json'));
 const templatesData = require(path.join(__dirname, '..', '..', 'data', 'templates.json'));
 
 function register(bot) {
-    // /gundem - random 3 from TREND_TOPICS
+    // /gundem - random 3 from TREND_TOPICS (FREE - auth only, no API key)
     bot.onText(/\/gundem/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const shuffled = [...TREND_TOPICS].sort(() => 0.5 - Math.random());
         const selected = shuffled.slice(0, 3);
 
@@ -29,8 +34,12 @@ function register(bot) {
         sendSafeMessage(bot, msg.chat.id, response, true);
     });
 
-    // /takvim - static weekly plan
+    // /takvim - static weekly plan (FREE - auth only)
     bot.onText(/\/takvim/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const plan = `
 \u{1F4C5} *Bu Haftanin Icerik Receptesi (AI & Tech)*
 
@@ -55,8 +64,12 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
         sendSafeMessage(bot, msg.chat.id, plan, true);
     });
 
-    // /hooks - category selection inline keyboard
+    // /hooks - category selection inline keyboard (FREE - auth only)
     bot.onText(/\/hooks/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const opts = {
             reply_markup: {
                 inline_keyboard: [
@@ -75,8 +88,12 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
         bot.sendMessage(msg.chat.id, 'Secim yap:', opts);
     });
 
-    // /fikir - category selection inline keyboard
+    // /fikir - category selection inline keyboard (FREE - auth only)
     bot.onText(/\/fikir/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const opts = {
             reply_markup: {
                 inline_keyboard: [
@@ -95,8 +112,12 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
         bot.sendMessage(msg.chat.id, 'Secim yap:', opts);
     });
 
-    // /sablon - category selection
+    // /sablon - category selection (FREE - auth only)
     bot.onText(/\/sablon/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const opts = {
             reply_markup: {
                 inline_keyboard: [
@@ -114,8 +135,12 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
         bot.sendMessage(msg.chat.id, 'Secim yap:', opts);
     });
 
-    // /prompt - reply-based image prompt generator
+    // /prompt - reply-based image prompt generator (FREE - auth only)
     bot.onText(/\/prompt/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         if (!msg.reply_to_message || !msg.reply_to_message.text) {
             return sendSafeMessage(bot, msg.chat.id, '\u{26A0}\u{FE0F} Bir tweete yanitlayarak `/prompt` yazmalisin.', true);
         }
@@ -133,8 +158,12 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
         sendSafeMessage(bot, msg.chat.id, prompt, true);
     });
 
-    // /clean - delete message + spacer + auto-delete
+    // /clean - delete message + spacer + auto-delete (FREE - auth only)
     bot.onText(/\/clean/, async (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         try {
             bot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
 
@@ -149,13 +178,17 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
         }
     });
 
-    // /yayinla - simulated publish
+    // /yayinla - simulated publish (PAID - needs API key)
     bot.onText(/\/yayinla/, async (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         if (!msg.reply_to_message || !msg.reply_to_message.text) {
             return sendSafeMessage(bot, msg.chat.id, '\u{26A0}\u{FE0F} Yayinlamak istedigin tweete yanitlayarak (Reply) `/yayinla` yaz.', true);
         }
 
-        const { targetTwitterUsername } = state.getState();
+        const { targetTwitterUsername } = state.getUserSettings(userId);
         sendSafeMessage(bot, msg.chat.id, '\u{1F680} *X\'e gonderiliyor...*', true);
 
         setTimeout(() => {
@@ -163,10 +196,19 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
         }, 2000);
     });
 
-    // /hesaplar - GET /credits/balance, list accounts
+    // /hesaplar - GET /credits/balance, list accounts (PAID - needs API key)
     bot.onText(/\/hesaplar/, async (msg) => {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+        const user = auth.user;
+
+        const api = getApiClient(user.xpatla_api_key);
+        if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile XPatla API anahtarinizi girin.');
+
         try {
-            const response = await xpatlaApi.get('/credits/balance');
+            const response = await api.get('/credits/balance');
             const accounts = response.data.data.accounts || [];
 
             if (accounts.length > 0) {
@@ -176,34 +218,51 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
                     list += `${i + 1}. @${acc.twitter_username}${primary}\n`;
                 });
                 list += '\n\u{1F504} Degistirmek icin: \`/setuser <username>\`';
-                sendSafeMessage(bot, msg.chat.id, list, true);
+                sendSafeMessage(bot, chatId, list, true);
             } else {
-                sendSafeMessage(bot, msg.chat.id, '\u{274C} Hic bagli hesap bulunamadi.');
+                sendSafeMessage(bot, chatId, '\u{274C} Hic bagli hesap bulunamadi.');
             }
         } catch (e) {
-            sendSafeMessage(bot, msg.chat.id, '\u{274C} Hesaplar cekilemedi.');
+            sendSafeMessage(bot, chatId, '\u{274C} Hesaplar cekilemedi.');
         }
     });
 
-    // /kredi - GET /credits/balance, show balance
+    // /kredi - GET /credits/balance, show balance (PAID - needs API key)
     bot.onText(/\/kredi/, async (msg) => {
+        const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+        const user = auth.user;
+
+        const api = getApiClient(user.xpatla_api_key);
+        if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile XPatla API anahtarinizi girin.');
+
         try {
-            const response = await xpatlaApi.get('/credits/balance');
+            const response = await api.get('/credits/balance');
             const balance = response.data.data.credits_balance;
-            sendSafeMessage(bot, msg.chat.id, `\u{1F4B3} *Mevcut Krediniz:* ${balance}`, true);
+            sendSafeMessage(bot, chatId, `\u{1F4B3} *Mevcut Krediniz:* ${balance}`, true);
         } catch (e) {
-            sendSafeMessage(bot, msg.chat.id, '\u{274C} Kredi bilgisi alinamadi.');
+            sendSafeMessage(bot, chatId, '\u{274C} Kredi bilgisi alinamadi.');
         }
     });
 
-    // /voice - info message
+    // /voice - info message (FREE - auth only)
     bot.onText(/\/voice/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         sendSafeMessage(bot, msg.chat.id, '\u{1F399}\u{FE0F} *Sesli Tweet Ozelligi*\n\nBu ozelligi kullanmak icin bota dogrudan bir **ses kaydi** gondermeniz yeterlidir. \n\nBot sesinizi yaziya dokecek ve ardindan secili persona/format ile harika bir tweet taslagi hazirlayacaktir. \u{1F4B3}', true);
     });
 
     // Voice message handler - mockTranscribe with 4 random sentences
     bot.on('voice', async (msg) => {
         const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         sendSafeMessage(bot, chatId, "\u{1F399}\u{FE0F} *Ses kaydi aliniyor ve yaziya dokuluyor...*", true);
 
         const transcriptions = [

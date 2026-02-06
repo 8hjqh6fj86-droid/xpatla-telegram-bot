@@ -6,10 +6,15 @@
 const state = require('../state');
 const { sendSafeMessage, analyzeVibe } = require('../utils/helpers');
 const services = require('../services');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
 
 function register(bot) {
     // /analiz <text>
     bot.onText(/\/analiz (.+)/s, (msg, match) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const text = match[1];
         const viralData = services.calculateViralScore(text);
         const result = services.formatScoreMessage(viralData);
@@ -18,6 +23,10 @@ function register(bot) {
 
     // /vibe (reply-based)
     bot.onText(/\/vibe/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const chatId = msg.chat.id;
         const replyTo = msg.reply_to_message;
         const text = replyTo
@@ -48,6 +57,10 @@ ${analysis.suggestion}
 
     // /hesapla (reply-based)
     bot.onText(/\/hesapla/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         if (!msg.reply_to_message || !msg.reply_to_message.text) {
             return sendSafeMessage(bot, msg.chat.id, '\u{26A0}\u{FE0F} Analiz edilecek metne yanitlayarak (Reply) `/hesapla` yaz.', true);
         }
@@ -81,6 +94,10 @@ ${analysis.suggestion}
 
     // /viral - time-based posting recommendation
     bot.onText(/\/viral/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         const now = new Date();
         const hour = now.getHours();
         let recommendation = '';

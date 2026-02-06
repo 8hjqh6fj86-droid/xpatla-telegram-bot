@@ -5,10 +5,15 @@
 
 const state = require('../state');
 const { sendSafeMessage } = require('../utils/helpers');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
 
 function register(bot) {
     // /kaydet (reply-based)
     bot.onText(/\/kaydet/, (msg) => {
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
         if (!msg.reply_to_message || !msg.reply_to_message.text) {
             return sendSafeMessage(bot, msg.chat.id, '\u{26A0}\u{FE0F} Bir mesaji yanitlayarak (Reply) `/kaydet` yazmalisin.', true);
         }
@@ -16,7 +21,7 @@ function register(bot) {
         const contentToSave = msg.reply_to_message.text;
 
         try {
-            state.addDraft(contentToSave);
+            state.addDraft(userId, contentToSave);
             state.saveDrafts();
             sendSafeMessage(bot, msg.chat.id, '\u{2705} *Taslak Kaydedildi!* \n`/taslaklar` yazarak gorebilirsin.', true);
         } catch (e) {
@@ -27,7 +32,11 @@ function register(bot) {
 
     // /taslaklar
     bot.onText(/\/taslaklar/, (msg) => {
-        const draftsData = state.getDrafts();
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
+        const draftsData = state.getDrafts(userId);
 
         if (draftsData.length === 0) {
             return sendSafeMessage(bot, msg.chat.id, '\u{1F4C2} *Henuz hic taslagin yok.* \nBegendirin bir mesaja yanit verip `/kaydet` diyebilirsin.', true);
@@ -48,17 +57,21 @@ function register(bot) {
 
     // /sil <id>
     bot.onText(/\/sil (.+)/, (msg, match) => {
-        const idToDelete = match[1].trim();
-        const draftsBefore = state.getDrafts().length;
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
 
-        state.deleteDraft(idToDelete);
+        const idToDelete = match[1].trim();
+        const draftsBefore = state.getDrafts(userId).length;
+
+        state.deleteDraft(userId, idToDelete);
 
         // Also try numeric comparison in case id is stored as number
-        if (state.getDrafts().length === draftsBefore) {
-            state.deleteDraft(parseInt(idToDelete, 10));
+        if (state.getDrafts(userId).length === draftsBefore) {
+            state.deleteDraft(userId, parseInt(idToDelete, 10));
         }
 
-        if (state.getDrafts().length < draftsBefore) {
+        if (state.getDrafts(userId).length < draftsBefore) {
             state.saveDrafts();
             sendSafeMessage(bot, msg.chat.id, '\u{1F5D1}\u{FE0F} *Taslak silindi.*', true);
         } else {

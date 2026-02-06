@@ -4,15 +4,24 @@
  */
 
 const state = require('../state');
-const xpatlaApi = require('../services/xpatlaApi');
 const { sendSafeMessage } = require('../utils/helpers');
 const { VALID_PERSONAS } = require('../utils/constants');
+const { requireAuth, handleUnauthorized } = require('../middleware/auth');
+const { getApiClient } = require('../services/apiClientFactory');
 
 function register(bot) {
     bot.onText(/\/ab (.+)/, async (msg, match) => {
         const chatId = msg.chat.id;
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+        const user = auth.user;
+
+        const api = getApiClient(user.xpatla_api_key);
+        if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile XPatla API anahtarinizi girin.');
+
         const topic = match[1];
-        const { targetTwitterUsername, currentFormat } = state.getState();
+        const { targetTwitterUsername, currentFormat } = state.getUserSettings(userId);
 
         sendSafeMessage(bot, chatId, `\u{1F500} *A/B Testi icin 2 farkli versiyon uretiliyor...*`, true);
 
@@ -23,7 +32,7 @@ function register(bot) {
                 p2 = VALID_PERSONAS[Math.floor(Math.random() * VALID_PERSONAS.length)];
             }
 
-            const res1 = await xpatlaApi.post('/tweets/generate', {
+            const res1 = await api.post('/tweets/generate', {
                 twitter_username: targetTwitterUsername,
                 topic: topic,
                 format: currentFormat,
@@ -31,7 +40,7 @@ function register(bot) {
                 count: 1
             });
 
-            const res2 = await xpatlaApi.post('/tweets/generate', {
+            const res2 = await api.post('/tweets/generate', {
                 twitter_username: targetTwitterUsername,
                 topic: topic,
                 format: currentFormat,

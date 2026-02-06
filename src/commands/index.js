@@ -18,6 +18,7 @@ const watchdog = require('./watchdog');
 const stats = require('./stats');
 const settings = require('./settings');
 const misc = require('./misc');
+const admin = require('./admin');
 
 const modules = [
     start,
@@ -34,7 +35,8 @@ const modules = [
     watchdog,
     stats,
     settings,
-    misc
+    misc,
+    admin
 ];
 
 /**
