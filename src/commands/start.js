@@ -100,13 +100,15 @@ authority, news, shitpost, mentalist, bilgi, sigma, doomer, hustler
                 'Bu bot davet koduyla calisir.\n\nKayit: `/start DAVET_KODU`\n\nDavet kodu icin admin ile iletisime gecin.', true);
         }
 
-        // Validate invite code
-        const result = inviteDao.useInviteCode(inviteCode, userId);
+        // Validate invite code (kullanma, sadece dogrula)
+        const result = inviteDao.validateInviteCode(inviteCode);
         if (!result.valid) {
             return sendSafeMessage(bot, chatId, `Gecersiz davet kodu: ${result.reason}`, true);
         }
 
+        // Once kullanici olustur, sonra kodu isaretle (FOREIGN KEY icin)
         userDao.createUser({ telegramId: userId, username: msg.from.username, firstName: msg.from.first_name, invitedBy: result.invitedBy });
+        inviteDao.markInviteUsed(inviteCode, userId);
         sendSafeMessage(bot, chatId,
             'Hosgeldin! Kayit tamamlandi.\n\n/setkey ile XPatla API anahtarini gir.\nArdindan /help ile tum komutlari gor.', true);
     });

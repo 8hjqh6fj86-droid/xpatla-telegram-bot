@@ -22,7 +22,7 @@ function createInviteCode(createdBy) {
     return { code };
 }
 
-function useInviteCode(code, usedBy) {
+function validateInviteCode(code) {
     const db = getDb();
     const invite = db.prepare('SELECT * FROM invite_codes WHERE code = ?').get(code);
 
@@ -34,12 +34,22 @@ function useInviteCode(code, usedBy) {
         return { valid: false, reason: 'Bu kod zaten kullanilmis' };
     }
 
+    return { valid: true, invitedBy: invite.created_by };
+}
+
+function markInviteUsed(code, usedBy) {
+    const db = getDb();
     db.prepare(`
         UPDATE invite_codes SET used_by = ?, used_at = datetime('now')
         WHERE code = ?
     `).run(usedBy, code);
+}
 
-    return { valid: true, invitedBy: invite.created_by };
+function useInviteCode(code, usedBy) {
+    const result = validateInviteCode(code);
+    if (!result.valid) return result;
+    markInviteUsed(code, usedBy);
+    return result;
 }
 
 function getInvitesByUser(createdBy) {
@@ -55,6 +65,8 @@ function isValidCode(code) {
 
 module.exports = {
     createInviteCode,
+    validateInviteCode,
+    markInviteUsed,
     useInviteCode,
     getInvitesByUser,
     isValidCode
