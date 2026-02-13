@@ -6,6 +6,7 @@ const watchdogDao = require('./watchdogDao');
 const schedulesDao = require('./schedulesDao');
 const statsDao = require('./statsDao');
 const rateLimitDao = require('./rateLimitDao');
+const historyDao = require('./historyDao');
 
 module.exports = {
     userDao,
@@ -15,5 +16,6 @@ module.exports = {
     watchdogDao,
     schedulesDao,
     statsDao,
-    rateLimitDao
+    rateLimitDao,
+    historyDao
 };

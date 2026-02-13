@@ -3,9 +3,9 @@ const services = require('../services');
 /**
  * Güvenli mesaj gönderme - Markdown hatalarını otomatik düzeltir
  */
-async function sendSafeMessage(bot, chatId, text, useMarkdown = false) {
+async function sendSafeMessage(bot, chatId, text, useMarkdown = false, extraOptions = {}) {
     try {
-        const options = useMarkdown ? { parse_mode: 'Markdown' } : {};
+        const options = { ...(useMarkdown ? { parse_mode: 'Markdown' } : {}), ...extraOptions };
         await bot.sendMessage(chatId, text, options);
         console.log(`<<< [GÖNDERİLDİ] Chat: ${chatId}`);
     } catch (err) {

@@ -82,10 +82,25 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     date_key     TEXT
 );
 
+CREATE TABLE IF NOT EXISTS tweet_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(telegram_id),
+    content      TEXT NOT NULL,
+    type         TEXT NOT NULL DEFAULT 'tweet',
+    topic        TEXT,
+    persona      TEXT,
+    format       TEXT,
+    viral_score  INTEGER,
+    is_favorite  INTEGER DEFAULT 0,
+    created_at   TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_drafts_user ON drafts(user_id);
 CREATE INDEX IF NOT EXISTS idx_snippets_user ON snippets(user_id);
 CREATE INDEX IF NOT EXISTS idx_watchdog_user ON watchdog(user_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_user ON schedules(user_id);
+CREATE INDEX IF NOT EXISTS idx_history_user ON tweet_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_history_fav ON tweet_history(user_id, is_favorite);
 `;
 
 function runMigrations(db) {

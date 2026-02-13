@@ -12,6 +12,7 @@ const snippetsDao = require('./db/dao/snippetsDao');
 const watchdogDao = require('./db/dao/watchdogDao');
 const schedulesDao = require('./db/dao/schedulesDao');
 const statsDao = require('./db/dao/statsDao');
+const historyDao = require('./db/dao/historyDao');
 const { RANK_THRESHOLDS } = require('./utils/constants');
 
 // ---------------------------------------------------------------------------
@@ -187,6 +188,34 @@ function setDailyGoal(userId, goal) {
 function saveStats() { /* no-op: SQLite auto-persist */ }
 
 // ===========================================================================
+// Tweet History (userId bazli)
+// ===========================================================================
+
+function addTweetHistory(userId, data) {
+    return historyDao.addTweet(userId, data);
+}
+
+function getTweetHistory(userId, limit, offset) {
+    return historyDao.getTweets(userId, limit, offset);
+}
+
+function getFavorites(userId) {
+    return historyDao.getFavorites(userId);
+}
+
+function toggleFavorite(userId, tweetId) {
+    return historyDao.toggleFavorite(userId, tweetId);
+}
+
+function searchTweets(userId, keyword) {
+    return historyDao.searchTweets(userId, keyword);
+}
+
+function getTweetById(tweetId) {
+    return historyDao.getById(tweetId);
+}
+
+// ===========================================================================
 // Backward compat: getState() - artik userId gerektirir
 // ===========================================================================
 
@@ -269,5 +298,12 @@ module.exports = {
     updateStats,
     getRank,
     setDailyGoal,
-    saveStats
+    saveStats,
+    // Tweet History (userId bazli)
+    addTweetHistory,
+    getTweetHistory,
+    getFavorites,
+    toggleFavorite,
+    searchTweets,
+    getTweetById
 };

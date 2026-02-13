@@ -17,6 +17,8 @@ const schedule = require('./schedule');
 const watchdog = require('./watchdog');
 const stats = require('./stats');
 const settings = require('./settings');
+const history = require('./history');
+const inline = require('./inline');
 const misc = require('./misc');
 const admin = require('./admin');
 
@@ -35,6 +37,8 @@ const modules = [
     watchdog,
     stats,
     settings,
+    history,
+    inline,
     misc,
     admin
 ];
@@ -63,5 +67,7 @@ module.exports = {
     watchdog,
     stats,
     settings,
+    history,
+    inline,
     misc
 };

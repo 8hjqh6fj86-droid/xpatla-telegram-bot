@@ -69,7 +69,12 @@ const BOT_COMMANDS = [
     { command: '/sabah', description: 'Günlük Rapor 🆓' },
     { command: '/ornekler', description: 'Kullanım Örnekleri 🆓' },
     { command: '/nasil', description: 'Tam Kılavuz 🆓' },
-    { command: '/clean', description: 'Ekranı Temizle 🆓' }
+    { command: '/clean', description: 'Ekranı Temizle 🆓' },
+    { command: '/gecmis', description: 'Tweet Geçmişi 🆓' },
+    { command: '/favoriler', description: 'Favori Tweetler 🆓' },
+    { command: '/ara', description: 'Tweet Ara 🆓' },
+    { command: '/mykey', description: 'API Key Görüntüle 🔒' },
+    { command: '/delkey', description: 'API Key Sil 🔒' }
 ];
 
 module.exports = {

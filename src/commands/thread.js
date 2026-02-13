@@ -36,12 +36,23 @@ function register(bot) {
                 const tweets = response.data.data.tweets;
                 state.updateStats(userId, 'session_threads');
 
+                const fullThread = tweets.map(t => t.text).join('\n\n---\n\n');
+                const historyId = state.addTweetHistory(userId, {
+                    content: fullThread, type: 'thread', topic,
+                    persona: currentPersona, format: 'thread'
+                });
+
                 let threadText = `\u{1F9F5} *Hazirlanan Thread*\n\n`;
                 tweets.forEach((t, i) => {
                     threadText += `${i + 1}/${tweets.length}\n${t.text}\n\n`;
                 });
 
-                sendSafeMessage(bot, chatId, threadText, true);
+                sendSafeMessage(bot, chatId, threadText, true, {
+                    reply_markup: { inline_keyboard: [
+                        [{ text: '\u{2B50} Favori', callback_data: `fav_${historyId}` },
+                         { text: '\u{1F4CB} Kopyala', callback_data: `copy_${historyId}` }]
+                    ]}
+                });
             }
         } catch (e) {
             const errorMsg = e.response?.data?.error || e.message;

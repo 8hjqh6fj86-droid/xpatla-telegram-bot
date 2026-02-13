@@ -51,7 +51,18 @@ ${viralData.tips.slice(0, 3).join(' \u{2022} ')}`;
                     analysis += `\n\n\u{1F389} *TEBRIKLER!* Gunluk hedefini tamamladin! (+50 XP)`;
                 }
 
-                sendSafeMessage(bot, chatId, `\u{2728} *Uretilen Tweet:*\n\n${tweet.text}\n\n---${viralSection}\n${analysis}`, true);
+                const historyId = state.addTweetHistory(userId, {
+                    content: tweet.text, type: 'tweet', topic,
+                    persona: currentPersona, format: currentFormat,
+                    viralScore: viralData.score
+                });
+
+                sendSafeMessage(bot, chatId, `\u{2728} *Uretilen Tweet:*\n\n${tweet.text}\n\n---${viralSection}\n${analysis}`, true, {
+                    reply_markup: { inline_keyboard: [
+                        [{ text: '\u{2B50} Favori', callback_data: `fav_${historyId}` },
+                         { text: '\u{1F4CB} Kopyala', callback_data: `copy_${historyId}` }]
+                    ]}
+                });
             }
         } catch (e) {
             const errorMsg = e.response?.data?.error || e.message;
@@ -92,7 +103,18 @@ ${viralData.tips.slice(0, 3).join(' \u{2022} ')}`;
                 const tweet = response.data.data.tweets[0].text;
                 state.updateStats(userId, 'session_tweets');
                 const analysis = formatAnalysis(tweet);
-                sendSafeMessage(bot, chatId, `\u{1F3C6} *Viral Master Ciktisi:*\n\n${tweet}\n\n---${analysis}`, true);
+
+                const historyId = state.addTweetHistory(userId, {
+                    content: tweet, type: 'vmaster', topic,
+                    persona: 'authority', format: 'longform'
+                });
+
+                sendSafeMessage(bot, chatId, `\u{1F3C6} *Viral Master Ciktisi:*\n\n${tweet}\n\n---${analysis}`, true, {
+                    reply_markup: { inline_keyboard: [
+                        [{ text: '\u{2B50} Favori', callback_data: `fav_${historyId}` },
+                         { text: '\u{1F4CB} Kopyala', callback_data: `copy_${historyId}` }]
+                    ]}
+                });
             }
         } catch (e) {
             sendSafeMessage(bot, chatId, `\u{274C} Hata: ${e.message}`);
@@ -129,7 +151,17 @@ ${viralData.tips.slice(0, 3).join(' \u{2022} ')}`;
                 state.updateStats(userId, 'session_tweets');
                 const analysis = formatAnalysis(tweet.text);
 
-                sendSafeMessage(bot, chatId, `\u{1F3B2} *Rastgele Tweet:*\n\n${tweet.text}\n\n---${analysis}`, true);
+                const historyId = state.addTweetHistory(userId, {
+                    content: tweet.text, type: 'tweet', topic: randomTopic,
+                    persona: currentPersona, format: currentFormat
+                });
+
+                sendSafeMessage(bot, chatId, `\u{1F3B2} *Rastgele Tweet:*\n\n${tweet.text}\n\n---${analysis}`, true, {
+                    reply_markup: { inline_keyboard: [
+                        [{ text: '\u{2B50} Favori', callback_data: `fav_${historyId}` },
+                         { text: '\u{1F4CB} Kopyala', callback_data: `copy_${historyId}` }]
+                    ]}
+                });
             }
         } catch (e) {
             const errorMsg = e.response?.data?.error || e.message;

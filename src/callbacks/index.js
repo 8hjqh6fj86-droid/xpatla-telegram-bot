@@ -240,6 +240,11 @@ async function handleRemixCallback(bot, chatId, userId, user, action) {
             const { goalCompleted, newStreak } = state.updateStats(userId, 'session_remixes');
             const analysis = formatAnalysis(tweet);
 
+            const historyId = state.addTweetHistory(userId, {
+                content: tweet, type: 'remix', topic: originalText,
+                persona, format: currentFormat
+            });
+
             let result = `\u{1F504} *Remix Sonucu (${persona}):*\n\n${tweet}\n\n---${analysis}`;
 
             if (goalCompleted) {
@@ -249,7 +254,12 @@ async function handleRemixCallback(bot, chatId, userId, user, action) {
                 result += `\n\u{1F525} *Streak:* ${newStreak} gun!`;
             }
 
-            sendSafeMessage(bot, chatId, result, true);
+            sendSafeMessage(bot, chatId, result, true, {
+                reply_markup: { inline_keyboard: [
+                    [{ text: '\u{2B50} Favori', callback_data: `fav_${historyId}` },
+                     { text: '\u{1F4CB} Kopyala', callback_data: `copy_${historyId}` }]
+                ]}
+            });
         } else {
             sendSafeMessage(bot, chatId, '\u{274C} Remix uretilemedi, lutfen tekrar deneyin.');
         }
@@ -299,6 +309,11 @@ async function handleCevapCallback(bot, chatId, userId, user, action) {
             const { goalCompleted, newStreak } = state.updateStats(userId, 'session_replies');
             const analysis = formatAnalysis(tweet);
 
+            const historyId = state.addTweetHistory(userId, {
+                content: tweet, type: 'reply', topic: originalText,
+                persona: currentPersona, format: 'micro'
+            });
+
             let result = `\u{1F4AC} *Cevap (${type}):*\n\n${tweet}\n\n---${analysis}`;
 
             if (goalCompleted) {
@@ -308,7 +323,12 @@ async function handleCevapCallback(bot, chatId, userId, user, action) {
                 result += `\n\u{1F525} *Streak:* ${newStreak} gun!`;
             }
 
-            sendSafeMessage(bot, chatId, result, true);
+            sendSafeMessage(bot, chatId, result, true, {
+                reply_markup: { inline_keyboard: [
+                    [{ text: '\u{2B50} Favori', callback_data: `fav_${historyId}` },
+                     { text: '\u{1F4CB} Kopyala', callback_data: `copy_${historyId}` }]
+                ]}
+            });
         } else {
             sendSafeMessage(bot, chatId, '\u{274C} Cevap uretilemedi, lutfen tekrar deneyin.');
         }
@@ -444,6 +464,60 @@ function register(bot) {
             // ----- A/B Test callbacks (ab_*) -----
             if (action.startsWith('ab_')) {
                 return handleAbCallback(bot, chatId, userId, action);
+            }
+
+            // ----- History pagination (histpage_*) -----
+            if (action.startsWith('histpage_')) {
+                const page = parseInt(action.replace('histpage_', ''), 10);
+                const historyDao = require('../db/dao/historyDao');
+                const PAGE_SIZE = 5;
+                const offset = page * PAGE_SIZE;
+                const tweets = state.getTweetHistory(userId, PAGE_SIZE, offset);
+                const totalCount = historyDao.getCount(userId);
+                const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+
+                if (tweets.length === 0) {
+                    return sendSafeMessage(bot, chatId, 'Bu sayfada kayit yok.');
+                }
+
+                const lines = tweets.map((t, i) => {
+                    const num = page * PAGE_SIZE + i + 1;
+                    const fav = t.is_favorite ? ' [FAV]' : '';
+                    const typeLabel = t.type === 'thread' ? 'Thread' : t.type === 'remix' ? 'Remix' : t.type === 'reply' ? 'Reply' : 'Tweet';
+                    const content = t.content && t.content.length > 80 ? t.content.slice(0, 80) + '...' : (t.content || '');
+                    return `*${num}.* [${typeLabel}]${fav}\n${content}`;
+                });
+
+                const navButtons = [];
+                if (page > 0) navButtons.push({ text: 'Onceki', callback_data: `histpage_${page - 1}` });
+                if (page < totalPages - 1) navButtons.push({ text: 'Sonraki', callback_data: `histpage_${page + 1}` });
+
+                const tweetButtons = tweets.map(t => ([
+                    { text: `${t.is_favorite ? 'Favoriden Cikar' : 'Favori'}`, callback_data: `fav_${t.id}` },
+                    { text: 'Kopyala', callback_data: `copy_${t.id}` }
+                ]));
+
+                return sendSafeMessage(bot, chatId,
+                    `Tweet Gecmisin\n\nSayfa ${page + 1}/${totalPages}\n\n${lines.join('\n\n')}`, true, {
+                    reply_markup: { inline_keyboard: [...tweetButtons, ...(navButtons.length > 0 ? [navButtons] : [])] }
+                });
+            }
+
+            // ----- Favori toggle (fav_*) -----
+            if (action.startsWith('fav_')) {
+                const tweetId = parseInt(action.replace('fav_', ''), 10);
+                const result = state.toggleFavorite(userId, tweetId);
+                if (!result) return sendSafeMessage(bot, chatId, '\u{26A0}\u{FE0F} Tweet bulunamadi.');
+                const label = result.is_favorite ? '\u{2B50} Favorilere eklendi!' : '\u{274C} Favorilerden cikarildi.';
+                return sendSafeMessage(bot, chatId, label);
+            }
+
+            // ----- Kopyala (copy_*) -----
+            if (action.startsWith('copy_')) {
+                const tweetId = parseInt(action.replace('copy_', ''), 10);
+                const tweet = state.getTweetById(tweetId);
+                if (!tweet) return sendSafeMessage(bot, chatId, '\u{26A0}\u{FE0F} Tweet bulunamadi.');
+                return sendSafeMessage(bot, chatId, tweet.content);
             }
 
         } catch (err) {
