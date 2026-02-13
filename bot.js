@@ -1,10 +1,15 @@
 /**
  * XPatla Bot v3.0.0 - Multi-User SQLite
- * Giris Noktasi: config → db → bot → commands → callbacks → baslat
+ * Giris Noktasi: logger → config → db → bot → commands → callbacks → panel → baslat
  */
+
+// Logger'i her seyden once yukle (console.log override)
+const logger = require('./src/panel/logger');
+logger.install();
 
 const TelegramBot = require('node-telegram-bot-api');
 const { token, ADMIN_USER_ID } = require('./src/config');
+const panel = require('./src/panel/server');
 const { BOT_COMMANDS } = require('./src/utils/constants');
 const { getDb, closeDb } = require('./src/db');
 const { registerAll } = require('./src/commands');
@@ -53,6 +58,9 @@ async function initializeBot() {
 }
 
 initializeBot();
+
+// Admin panel baslat
+panel.start();
 
 // Polling hatalari
 bot.on('polling_error', (error) => {
