@@ -191,20 +191,56 @@ function handleHookCallback(bot, chatId, action) {
 // ---------------------------------------------------------------------------
 // Idea callback handler (idea_*)
 // ---------------------------------------------------------------------------
-function handleIdeaCallback(bot, chatId, action) {
-    const category = action.replace('idea_', '');
-    const ideas = ideasData[category];
+const IDEA_CATEGORY_NAMES = {
+    vibe_coding: 'Vibe Coding',
+    algorithm_god: 'Algoritma & Buyume',
+    virtual_entity: 'Dijital Varlik & Teknoloji',
+    discipline_motivation: 'Disiplin & Motivasyon'
+};
 
-    if (!ideas || ideas.length === 0) {
-        return sendSafeMessage(bot, chatId, '\u{274C} Bu kategoride fikir bulunamadi.');
+async function handleIdeaCallback(bot, chatId, userId, user, action) {
+    const category = action.replace('idea_', '');
+    const categoryName = IDEA_CATEGORY_NAMES[category] || category;
+
+    const api = getApiClient(user.xpatla_api_key);
+    if (!api) {
+        // API key yoksa sabit fikirlerden ver
+        const ideas = ideasData[category];
+        if (!ideas || ideas.length === 0) {
+            return sendSafeMessage(bot, chatId, '\u{274C} Bu kategoride fikir bulunamadi.');
+        }
+        return sendSafeMessage(bot, chatId, `\u{1F4A1} *Icerik Fikri:*\n\n${pickRandom(ideas)}`, true);
     }
 
-    const idea = pickRandom(ideas);
-    return sendSafeMessage(
-        bot, chatId,
-        `\u{1F4A1} *Icerik Fikri:*\n\n${idea}`,
-        true
-    );
+    const { targetTwitterUsername, currentPersona } = state.getUserSettings(userId);
+
+    sendSafeMessage(bot, chatId, `\u{1F4A1} *${categoryName}* kategorisinde kisisel fikir uretiliyor...`, true);
+
+    try {
+        const response = await api.post('/tweets/generate', {
+            twitter_username: targetTwitterUsername,
+            topic: `Bana "${categoryName}" kategorisinde 3 farkli tweet fikri ver. Her fikri bir cumlede ozetle ve neden viral olabilecegini kisa acikla. Sadece fikirleri ver, tweet yazma.`,
+            format: 'micro',
+            persona: currentPersona,
+            count: 1
+        });
+
+        if (response.data.success && response.data.data.tweets) {
+            const result = response.data.data.tweets[0].text;
+            return sendSafeMessage(bot, chatId,
+                `\u{1F4A1} *Kisisel Icerik Fikirleri (${categoryName}):*\n\n${result}`, true);
+        }
+
+        // API basarisiz olursa sabit fikirlerden
+        const ideas = ideasData[category];
+        const idea = ideas ? pickRandom(ideas) : 'Fikir uretilemedi.';
+        return sendSafeMessage(bot, chatId, `\u{1F4A1} *Icerik Fikri:*\n\n${idea}`, true);
+    } catch (e) {
+        // Hata olursa sabit fikirlerden fallback
+        const ideas = ideasData[category];
+        const idea = ideas ? pickRandom(ideas) : 'Fikir uretilemedi.';
+        return sendSafeMessage(bot, chatId, `\u{1F4A1} *Icerik Fikri:*\n\n${idea}`, true);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -438,7 +474,7 @@ function register(bot) {
 
             // ----- Idea callbacks (idea_*) -----
             if (action.startsWith('idea_')) {
-                return handleIdeaCallback(bot, chatId, action);
+                return handleIdeaCallback(bot, chatId, userId, user, action);
             }
 
             // ----- Remix callbacks (remix_*) -----
