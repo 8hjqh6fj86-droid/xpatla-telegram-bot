@@ -4,14 +4,16 @@
  */
 
 const { requireAdmin, handleUnauthorized } = require('../middleware/auth');
+const { requirePrivateChat } = require('../middleware/chatTypeGuard');
 const userDao = require('../db/dao/userDao');
 const inviteDao = require('../db/dao/inviteDao');
 const { sendSafeMessage } = require('../utils/helpers');
 
 function register(bot) {
 
-    // /invite - Davet kodu uret
+    // /invite - Davet kodu uret (SADECE DM)
     bot.onText(/\/invite/, (msg) => {
+        if (!requirePrivateChat(bot, msg)) return;
         const chatId = msg.chat.id;
         const auth = requireAdmin(msg.from.id);
         if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
@@ -104,8 +106,9 @@ function register(bot) {
         sendSafeMessage(bot, chatId, `✅ Engel kaldirildi: ${name}`);
     });
 
-    // /broadcast <mesaj> - Tum kullanicilara mesaj gonder
+    // /broadcast <mesaj> - Tum kullanicilara mesaj gonder (SADECE DM)
     bot.onText(/\/broadcast (.+)/s, async (msg, match) => {
+        if (!requirePrivateChat(bot, msg)) return;
         const chatId = msg.chat.id;
         const auth = requireAdmin(msg.from.id);
         if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);

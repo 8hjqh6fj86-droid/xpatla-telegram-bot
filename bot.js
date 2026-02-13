@@ -18,9 +18,13 @@ getDb();
 // Bot instance
 const bot = new TelegramBot(token, { polling: true });
 
-// Gelen mesajlari logla
+// Gelen mesajlari logla (hassas komutlar maskelenir)
+const SENSITIVE_COMMANDS = ['/setkey'];
 bot.on('message', (msg) => {
-    console.log(`>>> [GELEN] ${msg.from.username || msg.from.first_name} (${msg.from.id}): ${msg.text || '[media]'}`);
+    const text = msg.text || '[media]';
+    const isSensitive = SENSITIVE_COMMANDS.some(cmd => text.startsWith(cmd));
+    const logText = isSensitive ? `${text.split(' ')[0]} ***` : text;
+    console.log(`>>> [GELEN] ${msg.from.username || msg.from.first_name} (${msg.from.id}): ${logText}`);
 });
 
 // Tum komutlari ve callback'leri kaydet

@@ -1,13 +1,24 @@
 /**
  * Settings Commands
- * /setuser, /setformat, /setpersona, /setkey
+ * /setuser, /setformat, /setpersona, /setkey, /mykey, /delkey
  */
 
 const state = require('../state');
 const { sendSafeMessage } = require('../utils/helpers');
 const { VALID_FORMATS, VALID_PERSONAS } = require('../utils/constants');
 const { requireAuth, handleUnauthorized } = require('../middleware/auth');
+const { requirePrivateChat } = require('../middleware/chatTypeGuard');
 const userDao = require('../db/dao/userDao');
+
+/**
+ * API key'i maskeleyerek gosterir: xp_***son4
+ */
+function maskApiKey(key) {
+    if (!key || key.length < 8) return '***';
+    const prefix = key.slice(0, 3);
+    const suffix = key.slice(-4);
+    return `${prefix}***${suffix}`;
+}
 
 function register(bot) {
     // /setuser <username>
@@ -53,8 +64,10 @@ function register(bot) {
         }
     });
 
-    // /setkey <api_key> - XPatla API key kaydet
+    // /setkey <api_key> - XPatla API key kaydet (SADECE DM)
     bot.onText(/\/setkey (.+)/, async (msg, match) => {
+        if (!requirePrivateChat(bot, msg)) return;
+
         const chatId = msg.chat.id;
         const userId = msg.from.id;
         const auth = requireAuth(userId);
@@ -67,6 +80,35 @@ function register(bot) {
         try { await bot.deleteMessage(chatId, msg.message_id); } catch (_e) {}
 
         sendSafeMessage(bot, chatId, 'API anahtari kaydedildi! Guvenlik icin mesajiniz silindi.\n\nArtik /tweet, /thread gibi komutlari kullanabilirsiniz.', true);
+    });
+
+    // /mykey - Kayitli API key'i maskeli goster (SADECE DM)
+    bot.onText(/\/mykey/, (msg) => {
+        if (!requirePrivateChat(bot, msg)) return;
+
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
+        const user = auth.user;
+        if (!user.xpatla_api_key) {
+            return sendSafeMessage(bot, msg.chat.id, 'Kayitli API anahtariniz yok. `/setkey <key>` ile ekleyin.', true);
+        }
+
+        const masked = maskApiKey(user.xpatla_api_key);
+        sendSafeMessage(bot, msg.chat.id, `Kayitli API anahtariniz: \`${masked}\``, true);
+    });
+
+    // /delkey - API key'i sil (SADECE DM)
+    bot.onText(/\/delkey/, (msg) => {
+        if (!requirePrivateChat(bot, msg)) return;
+
+        const userId = msg.from.id;
+        const auth = requireAuth(userId);
+        if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+
+        userDao.setApiKey(userId, null);
+        sendSafeMessage(bot, msg.chat.id, 'API anahtariniz silindi. Yeni key icin `/setkey <key>` kullanin.', true);
     });
 }
 

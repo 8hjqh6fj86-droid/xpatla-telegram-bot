@@ -4,9 +4,12 @@
 # Node.js
 node_modules/
 
-# Test ve debug dosyaları
+# Test ve debug dosyalari
 test-*.js
 debug-*.js
+discover.js
+check-identity.js
+analyzer.js
 temp_*.txt
 
 # SQLite veritabani
@@ -15,6 +18,7 @@ data/xpatla.db-wal
 data/xpatla.db-shm
 
 # Log dosyalari
+logs/
 output.log
 *.log
 
