@@ -25,3 +25,8 @@ output.log
 # OS dosyaları
 .DS_Store
 Thumbs.db
+nul
+
+# TLDR cache
+.tldr/
+.tldrignore

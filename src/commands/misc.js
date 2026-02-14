@@ -88,28 +88,69 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
         bot.sendMessage(msg.chat.id, 'Secim yap:', opts);
     });
 
-    // /fikir - category selection inline keyboard (FREE - auth only)
-    bot.onText(/\/fikir/, (msg) => {
+    // /fikir [konu] - kisisel fikir uretimi, her fikir icin tweet butonu
+    bot.onText(/\/fikir(?: (.+))?/, async (msg, match) => {
+        const chatId = msg.chat.id;
         const userId = msg.from.id;
         const auth = requireAuth(userId);
         if (!auth.authorized) return handleUnauthorized(bot, msg, auth.reason);
+        const user = auth.user;
 
-        const opts = {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: '\u{1F52E} Vibe Coding', callback_data: 'idea_vibe_coding' },
-                        { text: '\u{1F916} Algorithm God', callback_data: 'idea_algorithm_god' }
-                    ],
-                    [
-                        { text: '\u{1F310} Virtual Entity', callback_data: 'idea_virtual_entity' },
-                        { text: '\u{1F4AA} Disiplin & Motivasyon', callback_data: 'idea_discipline_motivation' }
-                    ]
-                ]
+        const api = getApiClient(user.xpatla_api_key);
+        if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile API anahtarinizi girin.');
+
+        const inputTopic = match[1] ? match[1].trim() : null;
+        const { targetTwitterUsername, currentPersona } = state.getUserSettings(userId);
+
+        const topicText = inputTopic
+            ? `"${inputTopic}" konusunda`
+            : 'farkli konularda';
+
+        sendSafeMessage(bot, chatId, `\u{1F4A1} ${topicText} fikir uretiliyor...`, true);
+
+        try {
+            const payload = {
+                topic: `Bana Twitter icin ${topicText} 3 farkli tweet fikri ver. Her fikri numarali olarak yaz (1. 2. 3.). Her biri tek cumle ve tweet konusu olarak kullanilabilir olsun. Sadece fikirleri listele, tweet yazma.`,
+                format: 'micro',
+                persona: currentPersona,
+                count: 1
+            };
+            if (targetTwitterUsername) payload.twitter_username = targetTwitterUsername;
+
+            const response = await api.post('/tweets/generate', payload);
+
+            if (response.data.success && response.data.data.tweets) {
+                const raw = response.data.data.tweets[0].text;
+
+                // Fikirleri satirlara ayir ve butonlar olustur
+                const lines = raw.split('\n').filter(l => l.trim().length > 0);
+                const ideas = lines.slice(0, 3).map(l => l.replace(/^\d+[\.\)\-]\s*/, '').trim());
+
+                let text = `\u{1F4A1} *Icerik Fikirleri${inputTopic ? ' (' + inputTopic + ')' : ''}:*\n\n`;
+                const buttons = [];
+
+                ideas.forEach((idea, i) => {
+                    text += `*${i + 1}.* ${idea}\n\n`;
+                    // Fikri base64 yerine state'e kaydet, callback'te kullan
+                    const truncated = idea.length > 60 ? idea.slice(0, 60) : idea;
+                    buttons.push([{ text: `\u{270F}\u{FE0F} ${i + 1}. Fikirle Tweet Yaz`, callback_data: `ideatweet_${i}_${userId}` }]);
+                });
+
+                // Fikirleri gecici olarak state'e kaydet
+                state.setFrameworkContext(chatId, { type: 'idea_tweets', ideas });
+
+                text += '_Birini sec, direkt tweet uretilsin._';
+
+                return sendSafeMessage(bot, chatId, text, true, {
+                    reply_markup: { inline_keyboard: buttons }
+                });
             }
-        };
-        sendSafeMessage(bot, msg.chat.id, '\u{1F4A1} *Hangi konuda icerik fikri istiyorsun?*', true);
-        bot.sendMessage(msg.chat.id, 'Secim yap:', opts);
+
+            sendSafeMessage(bot, chatId, '\u{274C} Fikir uretilemedi, tekrar deneyin.');
+        } catch (e) {
+            const errorMsg = e.response?.data?.error || e.message;
+            sendSafeMessage(bot, chatId, `\u{274C} Hata: ${errorMsg}`);
+        }
     });
 
     // /sablon - category selection (FREE - auth only)

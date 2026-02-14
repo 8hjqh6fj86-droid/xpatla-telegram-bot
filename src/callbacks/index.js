@@ -472,6 +472,57 @@ function register(bot) {
                 return handleHookCallback(bot, chatId, action);
             }
 
+            // ----- Fikir → Tweet (ideatweet_*) -----
+            if (action.startsWith('ideatweet_')) {
+                const parts = action.split('_');
+                const ideaIndex = parseInt(parts[1], 10);
+                const ctx = state.getFrameworkContext(chatId);
+
+                if (!ctx || ctx.type !== 'idea_tweets' || !ctx.ideas || !ctx.ideas[ideaIndex]) {
+                    return sendSafeMessage(bot, chatId, 'Fikir suresi doldu. /fikir ile tekrar dene.');
+                }
+
+                const selectedIdea = ctx.ideas[ideaIndex];
+                const api = getApiClient(user.xpatla_api_key);
+                if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile API anahtarinizi girin.');
+
+                const { targetTwitterUsername, currentFormat, currentPersona } = state.getUserSettings(userId);
+                sendSafeMessage(bot, chatId, `\u{270F}\u{FE0F} "${selectedIdea.slice(0, 50)}..." ile tweet uretiliyor...`, true);
+
+                try {
+                    const response = await api.post('/tweets/generate', {
+                        twitter_username: targetTwitterUsername,
+                        topic: selectedIdea,
+                        format: currentFormat,
+                        persona: currentPersona,
+                        count: 1
+                    });
+
+                    if (response.data.success && response.data.data.tweets) {
+                        const tweet = response.data.data.tweets[0].text;
+                        state.updateStats(userId, 'session_tweets');
+
+                        const historyId = state.addTweetHistory(userId, {
+                            content: tweet, type: 'tweet', topic: selectedIdea,
+                            persona: currentPersona, format: currentFormat
+                        });
+
+                        sendSafeMessage(bot, chatId, `\u{2728} *Tweet:*\n\n${tweet}`, true, {
+                            reply_markup: { inline_keyboard: [
+                                [{ text: '\u{2B50} Favori', callback_data: `fav_${historyId}` },
+                                 { text: '\u{1F4CB} Kopyala', callback_data: `copy_${historyId}` }]
+                            ]}
+                        });
+                    }
+                } catch (e) {
+                    const errorMsg = e.response?.data?.error || e.message;
+                    sendSafeMessage(bot, chatId, `\u{274C} Hata: ${errorMsg}`);
+                } finally {
+                    state.deleteFrameworkContext(chatId);
+                }
+                return;
+            }
+
             // ----- Idea callbacks (idea_*) -----
             if (action.startsWith('idea_')) {
                 return handleIdeaCallback(bot, chatId, userId, user, action);
