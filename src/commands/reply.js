@@ -20,20 +20,35 @@ function register(bot) {
         const api = getApiClient(user.xpatla_api_key);
         if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile XPatla API anahtarinizi girin.');
 
-        const tweetUrl = match[1];
+        const tweetUrl = match[1].trim();
         const { targetTwitterUsername, currentPersona } = state.getUserSettings(userId);
 
         sendSafeMessage(bot, chatId, `\u{231B} Tweete uygun cevap uretiliyor...`);
 
         try {
-            const response = await api.post('/tweets/generate-reply', {
+            const response = await api.post('/tweets/generate', {
                 twitter_username: targetTwitterUsername,
                 tweet_url: tweetUrl,
-                persona: currentPersona
+                persona: currentPersona,
+                format: 'micro',
+                count: 1
             });
 
-            if (response.data.success && response.data.data.reply) {
-                sendSafeMessage(bot, chatId, `\u{1F4AC} *Cevap Onerisi:*\n\n${response.data.data.reply.text}`, true);
+            if (response.data.success && response.data.data.tweets) {
+                const reply = response.data.data.tweets[0].text;
+                state.updateStats(userId, 'session_replies');
+
+                const historyId = state.addTweetHistory(userId, {
+                    content: reply, type: 'reply', topic: tweetUrl,
+                    persona: currentPersona, format: 'micro'
+                });
+
+                sendSafeMessage(bot, chatId, `\u{1F4AC} *Cevap Onerisi:*\n\n${reply}`, true, {
+                    reply_markup: { inline_keyboard: [
+                        [{ text: '\u{2B50} Favori', callback_data: `fav_${historyId}` },
+                         { text: '\u{1F4CB} Kopyala', callback_data: `copy_${historyId}` }]
+                    ]}
+                });
             }
         } catch (e) {
             const errorMsg = e.response?.data?.error || e.message;
