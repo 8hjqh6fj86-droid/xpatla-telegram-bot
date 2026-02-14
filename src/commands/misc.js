@@ -97,9 +97,28 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
         const user = auth.user;
 
         const api = getApiClient(user.xpatla_api_key);
-        if (!api) return sendSafeMessage(bot, chatId, 'Once /setkey ile API anahtarinizi girin.');
-
         const inputTopic = match[1] ? match[1].trim() : null;
+
+        // API key yoksa lokal fikirlerden ver (FREE fallback)
+        if (!api) {
+            const categories = Object.keys(ideasData);
+            const randomCat = categories[Math.floor(Math.random() * categories.length)];
+            const ideas = ideasData[randomCat] || [];
+            const shuffled = [...ideas].sort(() => 0.5 - Math.random());
+            const selected = shuffled.slice(0, 3);
+
+            if (selected.length === 0) {
+                return sendSafeMessage(bot, chatId, '\u{274C} Fikir bulunamadi.');
+            }
+
+            let text = `\u{1F4A1} *Icerik Fikirleri:*\n\n`;
+            selected.forEach((idea, i) => {
+                text += `*${i + 1}.* ${idea}\n\n`;
+            });
+            text += '_API key ile kisisel fikirler ve direkt tweet uretimi icin: /setkey_';
+            return sendSafeMessage(bot, chatId, text, true);
+        }
+
         const { targetTwitterUsername, currentPersona } = state.getUserSettings(userId);
 
         const topicText = inputTopic
@@ -131,8 +150,6 @@ Kendi projenizden bir ekran goruntusu paylasin. (#BuildInPublic)
 
                 ideas.forEach((idea, i) => {
                     text += `*${i + 1}.* ${idea}\n\n`;
-                    // Fikri base64 yerine state'e kaydet, callback'te kullan
-                    const truncated = idea.length > 60 ? idea.slice(0, 60) : idea;
                     buttons.push([{ text: `\u{270F}\u{FE0F} ${i + 1}. Fikirle Tweet Yaz`, callback_data: `ideatweet_${i}_${userId}` }]);
                 });
 

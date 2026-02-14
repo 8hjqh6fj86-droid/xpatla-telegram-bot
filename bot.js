@@ -74,6 +74,9 @@ process.on('SIGINT', () => {
     process.exit(0);
 });
 
-process.on('uncaughtException', (err) => console.error('KRITIK HATA:', err));
+process.on('uncaughtException', (err) => {
+    if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_WRITE_AFTER_END') return;
+    console.error('KRITIK HATA:', err);
+});
 
 console.log('Bot v3.0.0 Aktif - Multi-User SQLite.');

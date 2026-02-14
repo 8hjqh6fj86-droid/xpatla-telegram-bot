@@ -19,7 +19,11 @@ function addLog(level, message) {
     // SSE client'lara yayinla
     const data = JSON.stringify(entry);
     for (const client of sseClients) {
-        client.write(`data: ${data}\n\n`);
+        try {
+            client.write(`data: ${data}\n\n`);
+        } catch {
+            sseClients.delete(client);
+        }
     }
 }
 
